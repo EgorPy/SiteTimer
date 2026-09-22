@@ -1,17 +1,17 @@
 from ved3v_ascii_art import art
 
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+from fastapi import FastAPI
+import uvicorn
+
 from datetime import datetime
 import threading
 import ctypes
 import json
 import time
 import os
-
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
-from fastapi import FastAPI
-import uvicorn
 
 HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 REDIRECT = "localhost"
@@ -25,6 +25,7 @@ SITES_TO_BLOCK = [
 DAILY_LIMIT_MINUTES = 60
 CHECK_INTERVAL_SECONDS = 2
 USAGE_FILE = "usage_data.json"
+SITE_LOG_FILE = "site_log.json"
 
 MARKER_START = "# BLOCK_START"
 MARKER_END = "# BLOCK_END"
@@ -68,6 +69,21 @@ def load_usage():
 
 def save_usage(data):
     with open(USAGE_FILE, "w") as f:
+        json.dump(data, f)
+
+
+def load_site_log():
+    today = datetime.now().strftime("%Y-%m-%d")
+    if os.path.exists(SITE_LOG_FILE):
+        with open(SITE_LOG_FILE, "r") as f:
+            data = json.load(f)
+        if data.get("date") == today:
+            return data
+    return {"date": today, "sites": {}}
+
+
+def save_site_log(data):
+    with open(SITE_LOG_FILE, "w") as f:
         json.dump(data, f)
 
 
@@ -120,6 +136,7 @@ def monitor_loop():
     print("Checking screen time")
     while True:
         usage = load_usage()
+        site_log = load_site_log()
         site = active_site()
 
         if usage["minutes_used"] < DAILY_LIMIT_MINUTES:
@@ -127,6 +144,13 @@ def monitor_loop():
             if site is not None:
                 usage["minutes_used"] += CHECK_INTERVAL_SECONDS / 60
                 save_usage(usage)
+
+                entry = site_log["sites"].setdefault(
+                    site["domain"], {"minutes": 0, "last_active_at": None}
+                )
+                entry["minutes"] += CHECK_INTERVAL_SECONDS / 60
+                entry["last_active_at"] = datetime.now().isoformat()
+                save_site_log(site_log)
             blocked = False
         else:
             block_sites()
@@ -136,6 +160,7 @@ def monitor_loop():
             state["minutes_used"] = usage["minutes_used"]
             state["blocked"] = blocked
             state["active_domain"] = site["domain"] if site else None
+            state["site_log"] = site_log["sites"]
             state["updated_at"] = datetime.now().isoformat()
 
         time.sleep(CHECK_INTERVAL_SECONDS)
@@ -156,6 +181,7 @@ def status(request: Request):
         minutes_used = state["minutes_used"]
         blocked = state["blocked"]
         active_domain = state.get("active_domain")
+        site_log = state.get("site_log", {})
 
     return {
         "minutesUsed": round(minutes_used, 1),
@@ -167,6 +193,8 @@ def status(request: Request):
                 "domain": s["domain"],
                 "blocked": blocked,
                 "active": s["domain"] == active_domain,
+                "todayMinutes": round(site_log.get(s["domain"], {}).get("minutes", 0), 1),
+                "lastActive": site_log.get(s["domain"], {}).get("last_active_at"),
             }
             for s in SITES_TO_BLOCK
         ],
