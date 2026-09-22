@@ -15,6 +15,7 @@ import os
 
 HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 REDIRECT = "localhost"
+_last_debug_title = None
 
 SITES_TO_BLOCK = [
     {"name": "YouTube", "domain": "youtube.com", "hosts": ["youtube.com", "www.youtube.com"], "keywords": ["youtube"]},
@@ -131,13 +132,25 @@ def unblock_sites():
         f.writelines(new_lines)
 
 
+def debug_log_title(title, matched):
+    global _last_debug_title
+    if title != _last_debug_title:
+        print(f"[window] '{title}' -> {matched['name'] if matched else 'no match'}")
+        _last_debug_title = title
+
+
 def monitor_loop():
-    print("Running")
-    print("Checking screen time")
+    print("Checking screen time...")
     while True:
         usage = load_usage()
         site_log = load_site_log()
-        site = active_site()
+        title = get_active_window_title()
+        site = None
+        for s in SITES_TO_BLOCK:
+            if any(kw in title for kw in s["keywords"]):
+                site = s
+                break
+        debug_log_title(title, site)
 
         if usage["minutes_used"] < DAILY_LIMIT_MINUTES:
             unblock_sites()

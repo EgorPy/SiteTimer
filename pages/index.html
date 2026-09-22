@@ -208,12 +208,13 @@
             <thead>
             <tr>
                 <th>сайт</th>
+                <th>сегодня</th>
                 <th>статус</th>
             </tr>
             </thead>
             <tbody id="sites">
             <tr>
-                <td colspan="2" style="color:var(--dim)">загрузка.</td>
+                <td colspan="3" style="color:var(--dim)">загрузка.</td>
             </tr>
             </tbody>
         </table>
@@ -268,14 +269,19 @@
         ? sites.map(s => {
             const label = s.blocked ? 'закрыт' : (s.active ? 'сейчас открыт' : 'не используется');
             const cls = s.blocked ? 'blocked' : (s.active ? 'active' : '');
+            const last = s.lastActive
+            ? new Date(s.lastActive).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})
+            : 'ещё не заходили';
+            const mins = s.todayMinutes ?? 0;
             return `
         <tr>
           <td>${s.name}<span class="domain">${s.domain}</span></td>
+          <td>${mins} мин<span class="domain">${last}</span></td>
           <td><span class="flag ${cls}"><i></i>${label}</span></td>
         </tr>
       `;
         }).join('')
-        : `<tr><td colspan="2" style="color:var(--dim)">список пуст.</td></tr>`;
+        : `<tr><td colspan="3" style="color:var(--dim)">список пуст.</td></tr>`;
 
         const conn = document.getElementById('conn');
         conn.classList.remove('off');
