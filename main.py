@@ -1,6 +1,6 @@
 from ved3v_ascii_art import art
 
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from fastapi import FastAPI
@@ -29,7 +29,7 @@ SITES_TO_BLOCK = [
      "match": ["open.spotify.com", "spotify.com"]},
 ]
 
-DAILY_LIMIT_MINUTES = 60
+DAILY_LIMIT_MINUTES = 0
 CHECK_INTERVAL_SECONDS = 2
 USAGE_FILE = "usage_data.json"
 SITE_LOG_FILE = "site_log.json"
@@ -301,7 +301,7 @@ async def block_page_middleware(request: Request, call_next):
         with state_lock:
             blocked = state["blocked"]
         if blocked:
-            return HTMLResponse(BLOCK_PAGE_HTML)
+            return RedirectResponse(url="http://localhost:4000")
     return await call_next(request)
 
 
