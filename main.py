@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from fastapi import FastAPI
+import uiautomation as auto
 import uvicorn
 
 from datetime import datetime
@@ -15,12 +16,12 @@ import os
 
 HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 REDIRECT = "localhost"
-_last_debug_title = None
 
 SITES_TO_BLOCK = [
-    {"name": "YouTube", "domain": "youtube.com", "hosts": ["youtube.com", "www.youtube.com"], "keywords": ["youtube"]},
-    {"name": "Instagram", "domain": "instagram.com", "hosts": ["instagram.com", "www.instagram.com"], "keywords": ["instagram"]},
-    {"name": "Spotify", "domain": "open.spotify.com", "hosts": ["open.spotify.com"], "keywords": ["spotify"]},
+    {"name": "YouTube", "domain": "youtube.com", "hosts": ["youtube.com", "www.youtube.com"], "match": ["youtube.com"]},
+    {"name": "Instagram", "domain": "instagram.com", "hosts": ["instagram.com", "www.instagram.com"], "match": ["instagram.com"]},
+    {"name": "Spotify", "domain": "open.spotify.com", "hosts": ["open.spotify.com"],
+     "match": ["open.spotify.com", "spotify.com"]},
 ]
 
 DAILY_LIMIT_MINUTES = 60
@@ -30,6 +31,13 @@ SITE_LOG_FILE = "site_log.json"
 
 MARKER_START = "# BLOCK_START"
 MARKER_END = "# BLOCK_END"
+
+ADDRESS_BAR_NAMES = [
+    "Address and search bar",  # Chrome, Edge (EN)
+    "Search or enter address",  # Firefox (EN)
+    "Адресная строка и строка поиска",  # Chrome, Edge (RU)
+    "Поиск или введите адрес",  # Firefox (RU)
+]
 
 user32 = ctypes.windll.user32
 
@@ -42,12 +50,45 @@ def get_active_window_title():
     return buf.value.lower()
 
 
+def get_active_tab_url():
+    try:
+        top = auto.GetForegroundControl()
+        if top is None:
+            return ""
+        for name in ADDRESS_BAR_NAMES:
+            edit = top.EditControl(searchDepth=10, Name=name)
+            if edit.Exists(0, 0):
+                value = edit.GetValuePattern().Value
+                if value:
+                    return value.lower()
+    except Exception:
+        pass
+    return ""
+
+
 def active_site():
+    url = get_active_tab_url()
+    if url:
+        for site in SITES_TO_BLOCK:
+            if any(m in url for m in site["match"]):
+                return site
+        return None
+
     title = get_active_window_title()
     for site in SITES_TO_BLOCK:
-        if any(kw in title for kw in site["keywords"]):
+        if any(m in title for m in site["match"]):
             return site
     return None
+
+
+_last_debug_signal = None
+
+
+def debug_log_signal(signal, matched):
+    global _last_debug_signal
+    if signal != _last_debug_signal:
+        print(f"[сигнал] '{signal}' -> {matched['name'] if matched else 'нет совпадения'}")
+        _last_debug_signal = signal
 
 
 state_lock = threading.Lock()
@@ -132,25 +173,17 @@ def unblock_sites():
         f.writelines(new_lines)
 
 
-def debug_log_title(title, matched):
-    global _last_debug_title
-    if title != _last_debug_title:
-        print(f"[window] '{title}' -> {matched['name'] if matched else 'no match'}")
-        _last_debug_title = title
-
-
 def monitor_loop():
+    ctypes.windll.ole32.CoInitialize(None)
     print("Checking screen time...")
     while True:
         usage = load_usage()
         site_log = load_site_log()
-        title = get_active_window_title()
-        site = None
-        for s in SITES_TO_BLOCK:
-            if any(kw in title for kw in s["keywords"]):
-                site = s
-                break
-        debug_log_title(title, site)
+
+        url = get_active_tab_url()
+        signal = url if url else get_active_window_title()
+        site = active_site()
+        debug_log_signal(signal, site)
 
         if usage["minutes_used"] < DAILY_LIMIT_MINUTES:
             unblock_sites()
